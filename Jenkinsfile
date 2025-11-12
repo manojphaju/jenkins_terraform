@@ -9,11 +9,6 @@ pipeline {
         )
     }
 
-    environment {
-        AWS_ACCESS_KEY_ID     = credentials('AWS_ACCESS_KEY_ID')
-        AWS_SECRET_ACCESS_KEY = credentials('AWS_SECRET_ACCESS_KEY')
-    }
-
     stages {
         stage('Checkout') {
             steps {
@@ -23,9 +18,18 @@ pipeline {
 
         stage('Terraform Init & Plan') {
             steps {
-                sh 'terraform init'
-                sh 'terraform plan -out=tfplan'
-                sh 'terraform show -no-color tfplan > tfplan.txt'
+                withCredentials([
+                    string(credentialsId: 'AWS_ACCESS_KEY_ID', variable: 'AWS_ACCESS_KEY_ID'),
+                    string(credentialsId: 'AWS_SECRET_ACCESS_KEY', variable: 'AWS_SECRET_ACCESS_KEY')
+                ]) {
+                    sh '''
+                        echo "Starting Terraform Init..."
+                        terraform init
+                        echo "Running Terraform Plan..."
+                        terraform plan -out=tfplan -input=false
+                        terraform show -no-color tfplan > tfplan.txt
+                    '''
+                }
             }
         }
 
@@ -36,29 +40,26 @@ pipeline {
                 }
             }
             steps {
-                script {
-                    // Read plan from workspace root
-                    def plan = readFile 'tfplan.txt'
-                    input message: "Do you want to apply the plan?",
-                          parameters: [
-                              text(
-                                  name: 'Plan', 
-                                  description: 'Please review the plan below', 
-                                  defaultValue: plan
-                              )
-                          ]
-                }
+                input message: "Terraform plan generated. Do you want to apply?",
+                      parameters: [
+                          booleanParam(name: 'Proceed', defaultValue: true, description: 'Approve apply?')
+                      ]
             }
         }
 
         stage('Apply') {
             steps {
-                script {
-                    def applyCmd = "terraform apply -input=false tfplan"
-                    if (params.autoApprove) {
-                        applyCmd += " -auto-approve"
+                withCredentials([
+                    string(credentialsId: 'AWS_ACCESS_KEY_ID', variable: 'AWS_ACCESS_KEY_ID'),
+                    string(credentialsId: 'AWS_SECRET_ACCESS_KEY', variable: 'AWS_SECRET_ACCESS_KEY')
+                ]) {
+                    script {
+                        def applyCmd = "terraform apply -input=false tfplan"
+                        if (params.autoApprove) {
+                            applyCmd += " -auto-approve"
+                        }
+                        sh applyCmd
                     }
-                    sh applyCmd
                 }
             }
         }
