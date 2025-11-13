@@ -1,9 +1,9 @@
 provider "aws" {
-  region = "ap-southeast-2"
+  region = "eu-west-2"
 }
 
 resource "aws_instance" "foo" {
-  ami           = "ami-0d5d9d301c853a04a"  # Amazon Linux 2 in Sydney
+  ami           = "ami-0a0ff88d0f3f85a14"  
   instance_type = "t2.micro"
 
   tags = {
