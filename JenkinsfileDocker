@@ -1,0 +1,124 @@
+pipeline {
+    agent {
+        docker {
+            image 'hashicorp/terraform:1.6.7'  // Official Terraform image
+            args  '-u root:root'                // optional: run as root inside container
+        }
+    }
+
+    parameters {
+        booleanParam(
+            name: 'autoApprove',
+            defaultValue: false,
+            description: 'Automatically run apply after generating plan?'
+        )
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                git branch: 'main', url: 'https://github.com/manojphaju/jenkins_terraform.git'
+            }
+        }
+
+        stage('Verify AWS Connectivity') {
+            steps {
+                withCredentials([
+                    string(credentialsId: 'AWS_ACCESS_KEY_ID', variable: 'AWS_ACCESS_KEY_ID'),
+                    string(credentialsId: 'AWS_SECRET_ACCESS_KEY', variable: 'AWS_SECRET_ACCESS_KEY')
+                ]) {
+                    sh '''
+                        echo "Checking AWS connectivity..."
+                        aws sts get-caller-identity
+                    '''
+                }
+            }
+        }
+
+        stage('Terraform Init') {
+            steps {
+                withCredentials([
+                    string(credentialsId: 'AWS_ACCESS_KEY_ID', variable: 'AWS_ACCESS_KEY_ID'),
+                    string(credentialsId: 'AWS_SECRET_ACCESS_KEY', variable: 'AWS_SECRET_ACCESS_KEY')
+                ]) {
+                    sh 'terraform init'
+                }
+            }
+        }
+
+        stage('Terraform Plan') {
+            steps {
+                withCredentials([
+                    string(credentialsId: 'AWS_ACCESS_KEY_ID', variable: 'AWS_ACCESS_KEY_ID'),
+                    string(credentialsId: 'AWS_SECRET_ACCESS_KEY', variable: 'AWS_SECRET_ACCESS_KEY')
+                ]) {
+                    sh '''
+                        terraform plan -out=tfplan -input=false
+                        terraform show -no-color tfplan > tfplan.txt
+                    '''
+                }
+            }
+        }
+
+        stage('Approval') {
+            when {
+                not {
+                    equals expected: true, actual: params.autoApprove
+                }
+            }
+            steps {
+                input message: "Terraform plan generated. Do you want to apply?",
+                      parameters: [
+                          booleanParam(
+                              name: 'Proceed',
+                              defaultValue: true,
+                              description: 'Approve Terraform apply?'
+                          )
+                      ]
+            }
+        }
+
+        stage('Terraform Apply') {
+            steps {
+                withCredentials([
+                    string(credentialsId: 'AWS_ACCESS_KEY_ID', variable: 'AWS_ACCESS_KEY_ID'),
+                    string(credentialsId: 'AWS_SECRET_ACCESS_KEY', variable: 'AWS_SECRET_ACCESS_KEY')
+                ]) {
+                    script {
+                        def applyCmd = "terraform apply -input=false tfplan"
+                        if (params.autoApprove) {
+                            applyCmd += " -auto-approve"
+                        }
+                        sh applyCmd
+                    }
+                }
+            }
+        }
+
+        stage('Terraform Destroy') {
+            steps {
+                withCredentials([
+                    string(credentialsId: 'AWS_ACCESS_KEY_ID', variable: 'AWS_ACCESS_KEY_ID'),
+                    string(credentialsId: 'AWS_SECRET_ACCESS_KEY', variable: 'AWS_SECRET_ACCESS_KEY')
+                ]) {
+                    input message: "Do you want to destroy all Terraform-managed resources?",
+                          parameters: [
+                              booleanParam(
+                                  name: 'ProceedDestroy',
+                                  defaultValue: false,
+                                  description: 'Approve Terraform destroy?'
+                              )
+                          ]
+                    sh 'terraform destroy -auto-approve'
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            archiveArtifacts artifacts: 'tfplan.txt', fingerprint: true
+        }
+    }
+}
