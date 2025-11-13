@@ -1,8 +1,8 @@
 pipeline {
     agent {
         docker {
-            image 'hashicorp/terraform:1.6.7'  // Official Terraform image
-            args  '-u root:root'                // optional: run as root inside container
+            image 'hashicorp/terraform:1.6.7'
+            args '-u root:root' // run as root for installing AWS CLI
         }
     }
 
@@ -14,7 +14,24 @@ pipeline {
         )
     }
 
+    environment {
+        AWS_ACCESS_KEY_ID     = credentials('AWS_ACCESS_KEY_ID')
+        AWS_SECRET_ACCESS_KEY = credentials('AWS_SECRET_ACCESS_KEY')
+        AWS_DEFAULT_REGION    = 'eu-west-2'
+    }
+
     stages {
+
+        stage('Install AWS CLI') {
+            steps {
+                sh '''
+                    # Terraform image does not include AWS CLI by default
+                    apk add --no-cache python3 py3-pip
+                    pip3 install awscli
+                    aws --version
+                '''
+            }
+        }
 
         stage('Checkout') {
             steps {
@@ -24,40 +41,22 @@ pipeline {
 
         stage('Verify AWS Connectivity') {
             steps {
-                withCredentials([
-                    string(credentialsId: 'AWS_ACCESS_KEY_ID', variable: 'AWS_ACCESS_KEY_ID'),
-                    string(credentialsId: 'AWS_SECRET_ACCESS_KEY', variable: 'AWS_SECRET_ACCESS_KEY')
-                ]) {
-                    sh '''
-                        echo "Checking AWS connectivity..."
-                        aws sts get-caller-identity
-                    '''
-                }
+                sh 'aws sts get-caller-identity'
             }
         }
 
         stage('Terraform Init') {
             steps {
-                withCredentials([
-                    string(credentialsId: 'AWS_ACCESS_KEY_ID', variable: 'AWS_ACCESS_KEY_ID'),
-                    string(credentialsId: 'AWS_SECRET_ACCESS_KEY', variable: 'AWS_SECRET_ACCESS_KEY')
-                ]) {
-                    sh 'terraform init'
-                }
+                sh 'terraform init'
             }
         }
 
         stage('Terraform Plan') {
             steps {
-                withCredentials([
-                    string(credentialsId: 'AWS_ACCESS_KEY_ID', variable: 'AWS_ACCESS_KEY_ID'),
-                    string(credentialsId: 'AWS_SECRET_ACCESS_KEY', variable: 'AWS_SECRET_ACCESS_KEY')
-                ]) {
-                    sh '''
-                        terraform plan -out=tfplan -input=false
-                        terraform show -no-color tfplan > tfplan.txt
-                    '''
-                }
+                sh '''
+                    terraform plan -out=tfplan -input=false
+                    terraform show -no-color tfplan > tfplan.txt
+                '''
             }
         }
 
@@ -81,37 +80,27 @@ pipeline {
 
         stage('Terraform Apply') {
             steps {
-                withCredentials([
-                    string(credentialsId: 'AWS_ACCESS_KEY_ID', variable: 'AWS_ACCESS_KEY_ID'),
-                    string(credentialsId: 'AWS_SECRET_ACCESS_KEY', variable: 'AWS_SECRET_ACCESS_KEY')
-                ]) {
-                    script {
-                        def applyCmd = "terraform apply -input=false tfplan"
-                        if (params.autoApprove) {
-                            applyCmd += " -auto-approve"
-                        }
-                        sh applyCmd
+                script {
+                    def applyCmd = "terraform apply -input=false tfplan"
+                    if (params.autoApprove) {
+                        applyCmd += " -auto-approve"
                     }
+                    sh applyCmd
                 }
             }
         }
 
         stage('Terraform Destroy') {
             steps {
-                withCredentials([
-                    string(credentialsId: 'AWS_ACCESS_KEY_ID', variable: 'AWS_ACCESS_KEY_ID'),
-                    string(credentialsId: 'AWS_SECRET_ACCESS_KEY', variable: 'AWS_SECRET_ACCESS_KEY')
-                ]) {
-                    input message: "Do you want to destroy all Terraform-managed resources?",
-                          parameters: [
-                              booleanParam(
-                                  name: 'ProceedDestroy',
-                                  defaultValue: false,
-                                  description: 'Approve Terraform destroy?'
-                              )
-                          ]
-                    sh 'terraform destroy -auto-approve'
-                }
+                input message: "Do you want to destroy all Terraform-managed resources?",
+                      parameters: [
+                          booleanParam(
+                              name: 'ProceedDestroy',
+                              defaultValue: false,
+                              description: 'Approve Terraform destroy?'
+                          )
+                      ]
+                sh 'terraform destroy -auto-approve'
             }
         }
     }
