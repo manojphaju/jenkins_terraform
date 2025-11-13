@@ -1,12 +1,13 @@
+
 provider "aws" {
-  region = "eu-west-2"
+  region = var.region
 }
 
 resource "aws_instance" "foo" {
-  ami           = "ami-0a0ff88d0f3f85a14"  
-  instance_type = "t2.micro"
+  ami           = var.ami
+  instance_type = var.instance_type
 
   tags = {
-    Name = "Jenkins-terraform"
+    Name = var.instance_name
   }
 }
