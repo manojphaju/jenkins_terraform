@@ -24,6 +24,7 @@ pipeline {
                     string(credentialsId: 'AWS_SECRET_ACCESS_KEY', variable: 'AWS_SECRET_ACCESS_KEY')
                 ]) {
                     sh '''
+                        export PATH=/usr/local/bin:/opt/homebrew/bin:$PATH
                         echo "Checking AWS connectivity..."
                         aws sts get-caller-identity
                     '''
@@ -38,6 +39,7 @@ pipeline {
                     string(credentialsId: 'AWS_SECRET_ACCESS_KEY', variable: 'AWS_SECRET_ACCESS_KEY')
                 ]) {
                     sh '''
+                        export PATH=/usr/local/bin:/opt/homebrew/bin:$PATH
                         echo "Starting Terraform Init..."
                         terraform init
                     '''
@@ -52,6 +54,7 @@ pipeline {
                     string(credentialsId: 'AWS_SECRET_ACCESS_KEY', variable: 'AWS_SECRET_ACCESS_KEY')
                 ]) {
                     sh '''
+                        export PATH=/usr/local/bin:/opt/homebrew/bin:$PATH
                         echo "Running Terraform Plan..."
                         terraform plan -out=tfplan -input=false
                         terraform show -no-color tfplan > tfplan.txt
@@ -89,7 +92,10 @@ pipeline {
                         if (params.autoApprove) {
                             applyCmd += " -auto-approve"
                         }
-                        sh applyCmd
+                        sh """
+                            export PATH=/usr/local/bin:/opt/homebrew/bin:$PATH
+                            $applyCmd
+                        """
                     }
                 }
             }
