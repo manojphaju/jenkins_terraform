@@ -100,6 +100,29 @@ pipeline {
                 }
             }
         }
+
+        stage('Terraform Destroy') {
+            steps {
+                withCredentials([
+                    string(credentialsId: 'AWS_ACCESS_KEY_ID', variable: 'AWS_ACCESS_KEY_ID'),
+                    string(credentialsId: 'AWS_SECRET_ACCESS_KEY', variable: 'AWS_SECRET_ACCESS_KEY')
+                ]) {
+                    input message: "Do you want to destroy all Terraform-managed resources?",
+                          parameters: [
+                              booleanParam(
+                                  name: 'ProceedDestroy',
+                                  defaultValue: false,
+                                  description: 'Approve Terraform destroy?'
+                              )
+                          ]
+                    sh '''
+                        export PATH=/usr/local/bin:/opt/homebrew/bin:$PATH
+                        echo "Running Terraform Destroy..."
+                        terraform destroy -auto-approve
+                    '''
+                }
+            }
+        }
     }
 
     post {
